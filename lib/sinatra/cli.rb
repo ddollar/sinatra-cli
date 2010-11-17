@@ -3,116 +3,97 @@ require "sinatra/base"
 
 module Sinatra
   module CLI
+
+    def groups
+      @@groups ||= {}
+    end
+
+    def group(banner, &block)
+      groups[banner] = Sinatra::CLI::Group.new(banner, &block)
+    end
+
     def commands
-      @@commands ||= {}
+      groups.inject({}) do |hash, (name, group)|
+        group.commands.each do |name, command|
+          hash.update(name => command)
+        end
+        hash
+      end
     end
 
-    def command(path, &block)
-      commands[path.split(' ').first] = Sinatra::CLI::Command.new(path, &block)
+    helpers do
+    def cli_executable
+      request.env["HTTP_X_CLI_EXECUTABLE"]
     end
 
-    post "/command*" do
-      path = params[:splat].to_s.split("/").reject(&:blank?).join(":")
-
-      Sinatra::CLI.params = params
-
-      halt 404 unless command = commands[path]
-      command.call
-
-      [ 200, {}, result.to_json ]
+    def cli_version
+      request.env["HTTP_X_CLI_VERSION"]
     end
+  end
+
+    get "/" do
+      content_type "text/plain"
+      output = StringIO.new
+
+      output.puts "Usage: #{cli_executable} <COMMAND>"
+      output.puts
+      groups.each do |banner, group|
+        output.puts "%s:" % banner
+        group.commands.each do |name, command|
+          output.puts "  %s" % command.help
+        end
+        output.puts
+      end
+
+      output.string.strip
+    end
+
+    get "*" do
+      content_type "text/plain"
+      command = commands[parse_command(params[:splat].first)]
+      halt 404 unless command
+    
+      output  = StringIO.new
+      output.puts "Usage: %s %s" % [cli_executable, command.banner]
+      output.puts
+      unless command.arguments.empty?
+        output.puts "Arguments:"
+        command.arguments.each do |(name, arg)|
+          output.puts "  #{arg.help}"
+        end
+        output.puts
+      end
+      unless command.options.empty?
+        output.puts "Options:"
+        command.options.each do |(name, option)|
+          output.puts "  #{option.help}"
+        end
+        output.puts
+      end
+      output.string.strip
+    end
+
+    post "*" do
+      content_type "application/json"
+      path = params.delete("splat").first
+      command = commands[parse_command(path)]
+      foo = command.execute(parse_args(path), params)
+      puts "FOO[#{foo}]"
+      foo
+    end
+
+    def parse_command(splat)
+      splat.split(";").first.split("/").reject { |s| s.strip == "" }.join(":")
+    end
+
+    def parse_args(splat)
+      splat.split(";")[1..-1]
+    end
+
   end
 
   register CLI
 
-#     def commands
-#       @@commands ||= {}
-#     end
-#
-#     def command(path, &block)
-#       commands[path] = block
-#     end
-#
-#     def self.params=(params)
-#       @@params = params
-#     end
-#
-#     def params
-#       @@params || {}
-#     end
-#
-#     def args
-#       params[:args] || []
-#     end
-#
-#     def options
-#       params[:options] || {}
-#     end
-#
-#     def app
-#       if options[:app]
-#         options[:app]
-#       else
-#         output "Please specify an app with --app=APPNAME"
-#         nil
-#       end
-#     end
-#
-#     def confirmed?
-#       options[:confirm]
-#     end
-#
-#     def confirmed_app?
-#       options[:confirm] == app
-#     end
-#
-#     def result
-#       @@result ||= []
-#     end
-#
-# ## dsl #######################################################################
-#
-#     def output(message=nil)
-#       message ||= begin
-#         stream = StringIO.new
-#         yield stream
-#         stream.string
-#       end
-#
-#       result.push({ :type => "output", :message => message })
-#     end
-#
-#     def confirm(message, &block)
-#       if confirmed?
-#         yield
-#       else
-#         result.push({ :type => "confirm", :message => message })
-#       end
-#     end
-#
-#     def confirm_app
-#       if confirmed_app?
-#         yield
-#       else
-#         result.push({ :type => "confirm_app" })
-#       end
-#     end
-#   end
-#
-# ## sinatra ###################################################################
-#
-#   post "/command*" do
-#     path = params[:splat].to_s.split("/").reject(&:blank?).join(":")
-#
-#     Sinatra::CLI.params = params
-#
-#     halt 404 unless command = commands[path]
-#     command.call
-#
-#     [ 200, {}, result.to_json ]
-#   end
-  #
-  # register CLI
 end
 
-require "sinatra/cli/command"
+require "sinatra/cli/group"
