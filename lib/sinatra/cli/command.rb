@@ -81,15 +81,8 @@ class Sinatra::CLI::Command
 ## execution #################################################################
 
   class Context
-    attr_reader :args, :options
-
-    def initialize(args, options)
-      @args     = args    || []
-      @options  = options || {}
-    end
-
-    def run(block)
-      instance_eval &block
+    def run(&block)
+      catch(:abort) { instance_eval &block }
     end
 
     def actions
@@ -109,19 +102,47 @@ class Sinatra::CLI::Command
       throw :abort
     end
 
-    def confirm(message)
-      actions << ["confirm", message]
-    end
-
     def execute(command)
       actions << ["execute", command]
     end
   end
 
-  def execute(args, options={})
-    context = Context.new(args, options)
-    catch(:abort) { context.run(action) }
-    context.actions.to_json
+  class CommandContext < Context
+    attr_reader :args, :options, :request
+
+    def initialize(args, options, request)
+      @args    = args    || []
+      @options = options || {}
+      @request = request
+    end
+
+    def confirm(message, &block)
+      if options["confirm"]
+        if options["confirm"].downcase[0..0] == "y"
+          block.call
+        else
+          throw :abort
+        end
+      else
+        actions << ["confirm", message]
+      end
+    end
+  end
+
+  class ErrorContext < Context
+    attr_reader :exception, :response
+
+    def initialize(exception, response)
+      @exception = exception
+      @response  = response
+    end
+  end
+
+  def execute(args, options={}, request)
+    context = CommandContext.new(args, options, request)
+    context.run(&action)
+    { "commands" => context.actions }.to_json
   end
 
 end
+
