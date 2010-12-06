@@ -69,9 +69,16 @@ class Sinatra::CLI::Command
 
 ## help ######################################################################
 
+  def full_name
+    [ group.options[:prefix], name ].compact.join(":")
+  end
+
+  def full_path
+    [ group.options[:prefix], name ].compact.join("/")
+  end
+
   def help
-    #"%-#{padding}s # %s" % [name, description]
-    "%-30s # %s" % [name, description]
+    "%-30s # %s" % [full_name, description]
   end
 
   def padding

@@ -16,8 +16,12 @@ module Sinatra
       @@groups ||= {}
     end
 
-    def group(banner, &block)
-      groups[banner] = Sinatra::CLI::Group.new(banner, &block)
+    def group_for_prefix(prefix)
+      groups.values.detect { |g| g.options[:prefix] == prefix }
+    end
+
+    def group(banner, options={}, &block)
+      groups[banner] = Sinatra::CLI::Group.new(banner, options, &block)
     end
 
     def commands
@@ -29,12 +33,24 @@ module Sinatra
       end
     end
 
+    def command_for_full_name(path)
+      commands.values.detect { |c| c.full_name == path }
+    end
+
     def redirects
       groups.inject({}) do |hash, (name, group)|
         group.redirects.each do |name, redirect|
           hash.update(name => redirect)
         end
         hash
+      end
+    end
+
+    def match_redirect(command)
+      if redirect = redirects[command.split(":").first]
+        redirect.url
+      else
+        nil
       end
     end
 
@@ -46,6 +62,12 @@ module Sinatra
       def cli_version
         request.env["HTTP_X_CLI_VERSION"]
       end
+
+      def attempt_redirect(command)
+        if match = redirects[command.split(":").first]
+          redirect(match.url + request.path)
+        end
+      end
     end
 
     get "/" do
@@ -55,13 +77,7 @@ module Sinatra
       output.puts "Usage: #{cli_executable} <COMMAND>"
       output.puts
       groups.each do |banner, group|
-        output.puts "%s:" % banner
-        group.commands.each do |name, command|
-          output.puts "  %s" % command.help
-        end
-        group.redirects.each do |name, redirect|
-          output.puts "  %s" % redirect.help
-        end
+        output.puts group.help
         output.puts
       end
 
@@ -71,16 +87,20 @@ module Sinatra
     get "*" do
       content_type "text/plain"
       raw_command = parse_command(params[:splat].first)
-      command = commands[raw_command]
+      command = command_for_full_name(raw_command)
 
       unless command
-        redir = redirects[raw_command.split(':').first]
-        redirect redir.url if (redir && redir.url)
+        attempt_redirect(raw_command)
+        if group = group_for_prefix(raw_command)
+          return group.help
+        end
         halt 404
       end
 
       output  = StringIO.new
       output.puts "Usage: %s %s" % [cli_executable, command.banner]
+      output.puts
+      output.puts "  %s" % command.description
       output.puts
       unless command.arguments.empty?
         output.puts "Arguments:"

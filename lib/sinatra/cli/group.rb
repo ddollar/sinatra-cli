@@ -3,7 +3,11 @@ require "sinatra/cli/command"
 require "sinatra/cli/redirect"
 
 class Sinatra::CLI::Group
-  def initialize(banner, &block)
+  attr_reader :banner, :options
+
+  def initialize(banner, options={}, &block)
+    @banner  = banner
+    @options = options
     instance_eval &block
   end
 
@@ -23,6 +27,20 @@ class Sinatra::CLI::Group
   def redirect(namespace, description, url)
     redirect = Sinatra::CLI::Redirect.new(self, namespace, description, url)
     redirects[namespace] = redirect
+  end
+
+  def help
+    output = StringIO.new
+
+    output.puts "%s:" % banner
+    commands.each do |name, command|
+      output.puts "  %s" % command.help
+    end
+    redirects.each do |name, redirect|
+      output.puts "  %s" % redirect.help
+    end
+
+    output.string.strip
   end
 
 end
