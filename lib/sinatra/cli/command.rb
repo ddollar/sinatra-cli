@@ -145,7 +145,7 @@ class Sinatra::CLI::Command
     end
   end
 
-  def execute(args, options={}, request)
+  def execute(args, options, request)
     context = CommandContext.new(args, options, request)
     context.run(&action)
     { "commands" => context.actions }.to_json
